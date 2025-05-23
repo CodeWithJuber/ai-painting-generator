@@ -38,7 +38,7 @@ async function initializeDatabase() {
       )
     `);
     
-    // Create references2 table (changed from references)
+    // Create references2 table
     await connection.execute(`
       CREATE TABLE IF NOT EXISTS references2 (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -64,22 +64,53 @@ async function initializeDatabase() {
       )
     `);
     
-    // Create paintings table (renamed from thumbnails)
+    // Create paintings table with proper schema
     await connection.execute(`
       CREATE TABLE IF NOT EXISTS paintings (
         id INT AUTO_INCREMENT PRIMARY KEY,
         title_id INT NOT NULL,
-        idea_id INT NOT NULL,
+        idea_id INT NULL,
         image_url VARCHAR(255),
         image_data LONGTEXT,
-        status ENUM('pending', 'processing', 'completed', 'failed') DEFAULT 'pending',
-        error_message VARCHAR(255),
+        status ENUM('pending', 'creating_prompt', 'prompt_ready', 'generating_image', 'processing', 'completed', 'failed') DEFAULT 'pending',
+        error_message TEXT,
         used_reference_ids TEXT DEFAULT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (title_id) REFERENCES titles(id) ON DELETE CASCADE,
         FOREIGN KEY (idea_id) REFERENCES ideas(id) ON DELETE CASCADE
       )
     `);
+    
+    // Migrate existing tables if needed
+    try {
+      await connection.execute(`
+        ALTER TABLE paintings 
+        MODIFY COLUMN status ENUM('pending', 'creating_prompt', 'prompt_ready', 'generating_image', 'processing', 'completed', 'failed') DEFAULT 'pending'
+      `);
+      console.log('Updated paintings table status enum');
+    } catch (alterError) {
+      console.log('Paintings table status enum already up to date');
+    }
+    
+    try {
+      await connection.execute(`
+        ALTER TABLE paintings 
+        MODIFY COLUMN idea_id INT NULL
+      `);
+      console.log('Updated paintings table idea_id to be nullable');
+    } catch (alterError) {
+      console.log('Paintings table idea_id already nullable');
+    }
+    
+    try {
+      await connection.execute(`
+        ALTER TABLE paintings 
+        MODIFY COLUMN error_message TEXT
+      `);
+      console.log('Updated paintings table error_message to TEXT');
+    } catch (alterError) {
+      console.log('Paintings table error_message already TEXT');
+    }
     
     connection.release();
     console.log('Database initialized successfully');

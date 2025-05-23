@@ -1,148 +1,158 @@
-import axios from 'https://cdn.jsdelivr.net/npm/axios@1.3.5/+esm';
+// Simple API service for same-origin requests
+const API_BASE_URL = '/api';
 
-// Initialize with a default value, will be updated once we fetch the config
-let API_URL = '';
-let api = null;
-
-// Fetch server configuration and initialize the API
-const initAPI = async () => {
+// Helper function to make API requests
+const apiRequest = async (endpoint, options = {}) => {
+  const token = localStorage.getItem('authToken');
+  
+  const defaultOptions = {
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token && { 'Authorization': `Bearer ${token}` })
+    }
+  };
+  
+  const finalOptions = {
+    ...defaultOptions,
+    ...options,
+    headers: {
+      ...defaultOptions.headers,
+      ...options.headers
+    }
+  };
+  
   try {
-    // Use the current origin to get the config (for local development, we might need to adjust this)
-    const configResponse = await axios.get('/api/config');
-    const { serverIP, apiPort } = configResponse.data;
-    API_URL = `http://${serverIP}:${apiPort}/api`;
+    console.log(`Making API request to: ${API_BASE_URL}${endpoint}`);
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, finalOptions);
     
-    // Create axios instance with auth token
-    api = axios.create({
-      baseURL: API_URL,
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      timeout: 10000 // Add timeout to avoid long waits on network issues
-    });
-
-    // Add auth token to requests if available
-    api.interceptors.request.use(config => {
-      const token = localStorage.getItem('token');
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
-      }
-      return config;
-    });
+    // Handle different response types
+    let data;
+    const contentType = response.headers.get('content-type');
+    if (contentType && contentType.includes('application/json')) {
+      data = await response.json();
+    } else {
+      data = await response.text();
+    }
     
-    return true;
+    console.log(`API response for ${endpoint}:`, { status: response.status, data });
+    
+    if (!response.ok) {
+      // Extract error message from response
+      const errorMessage = data.error || data.message || `HTTP ${response.status}: ${response.statusText}`;
+      throw new Error(errorMessage);
+    }
+    
+    return data;
   } catch (error) {
-    console.error('Failed to fetch server configuration, using default', error);
-    
-    // Fallback to using the current hostname instead of hardcoded IP
-    const currentHostname = window.location.hostname;
-    API_URL = `http://${currentHostname}:3000/api`;
-    
-    // Create axios instance with auth token
-    api = axios.create({
-      baseURL: API_URL,
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      timeout: 10000
-    });
-
-    // Add auth token to requests if available
-    api.interceptors.request.use(config => {
-      const token = localStorage.getItem('token');
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
-      }
-      return config;
-    });
-    
-    return false;
+    console.error(`API request failed for ${endpoint}:`, error);
+    throw error;
   }
-};
-
-// Helper function to ensure API is initialized before making requests
-const ensureAPI = async () => {
-  if (!api) {
-    await initAPI();
-  }
-  return api;
 };
 
 // Auth endpoints
 export const login = async (email, password) => {
-  const apiInstance = await ensureAPI();
-  return apiInstance.post('/auth/login', { email, password });
+  return await apiRequest('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password })
+  });
 };
 
 export const register = async (username, email, password) => {
-  const apiInstance = await ensureAPI();
-  return apiInstance.post('/auth/register', { username, email, password });
+  return await apiRequest('/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({ username, email, password })
+  });
 };
 
 export const getProfile = async () => {
-  const apiInstance = await ensureAPI();
-  return apiInstance.get('/auth/me');
+  const result = await apiRequest('/auth/me');
+  return result.user;
 };
 
 // Title endpoints
 export const createTitle = async (title, instructions) => {
-  const apiInstance = await ensureAPI();
-  return apiInstance.post('/titles', { title, instructions });
+  console.log('API createTitle called with:', { title, instructions });
+  
+  const result = await apiRequest('/titles', {
+    method: 'POST',
+    body: JSON.stringify({ title, instructions })
+  });
+  
+  console.log('API createTitle response:', result);
+  
+  // The backend returns the title object directly, not wrapped
+  return result;
 };
 
 export const getTitles = async () => {
-  const apiInstance = await ensureAPI();
-  return apiInstance.get('/titles');
+  const result = await apiRequest('/titles');
+  return result.titles || result || [];
 };
 
 export const getTitle = async (id) => {
-  const apiInstance = await ensureAPI();
-  return apiInstance.get(`/titles/${id}`);
+  const result = await apiRequest(`/titles/${id}`);
+  return result.title || result;
 };
 
 export const updateTitle = async (id, title, instructions) => {
-  const apiInstance = await ensureAPI();
-  return apiInstance.put(`/titles/${id}`, { title, instructions });
+  const result = await apiRequest(`/titles/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify({ title, instructions })
+  });
+  return result.title || result;
 };
 
 export const deleteTitle = async (id) => {
-  const apiInstance = await ensureAPI();
-  return apiInstance.delete(`/titles/${id}`);
+  return await apiRequest(`/titles/${id}`, {
+    method: 'DELETE'
+  });
 };
 
 // Reference endpoints
-export const uploadReference = async (titleId, imageData, isGlobal = false) => {
-  const apiInstance = await ensureAPI();
-  return apiInstance.post('/references', { titleId, imageData, isGlobal });
+export const uploadReference = async (imageData, titleId = null, isGlobal = false) => {
+  const result = await apiRequest('/references', {
+    method: 'POST',
+    body: JSON.stringify({ 
+      image_data: imageData, 
+      title_id: titleId, 
+      is_global: isGlobal 
+    })
+  });
+  return result.reference || result;
 };
 
 export const getReferences = async (titleId) => {
-  const apiInstance = await ensureAPI();
-  return apiInstance.get(`/references/${titleId}`);
+  const result = await apiRequest(`/references/${titleId}`);
+  return result.references || result || [];
 };
 
 export const getGlobalReferences = async () => {
-  const apiInstance = await ensureAPI();
-  return apiInstance.get('/references/global');
+  const result = await apiRequest('/references/global');
+  return result.references || result || [];
 };
 
 export const deleteReference = async (id) => {
-  const apiInstance = await ensureAPI();
-  return apiInstance.delete(`/references/${id}`);
+  return await apiRequest(`/references/${id}`, {
+    method: 'DELETE'
+  });
 };
 
-// Painting endpoints (renamed from Thumbnail)
+// Painting endpoints
 export const generateThumbnails = async (titleId, quantity = 5) => {
-  const apiInstance = await ensureAPI();
-  return apiInstance.post('/paintings/generate', { titleId, quantity });
+  return await apiRequest('/paintings/generate', {
+    method: 'POST',
+    body: JSON.stringify({ titleId, quantity })
+  });
 };
 
 export const getThumbnails = async (titleId) => {
-  const apiInstance = await ensureAPI();
-  return apiInstance.get(`/paintings/${titleId}`);
+  return await apiRequest(`/paintings/${titleId}`);
 };
 
-// Initialize API when this module is imported
-initAPI();
+export const regeneratePainting = async (paintingId) => {
+  return await apiRequest(`/paintings/${paintingId}/regenerate`, {
+    method: 'POST'
+  });
+};
 
 export default async () => ensureAPI(); 

@@ -1,5 +1,5 @@
 const express = require('express');
-const { generatePaintings, getPaintings } = require('../controllers/paintingController');
+const { generatePaintings, getPaintings, regeneratePainting } = require('../controllers/paintingController');
 const authMiddleware = require('../middleware/auth');
 
 const router = express.Router();
@@ -9,5 +9,6 @@ router.use(authMiddleware);
 
 router.post('/generate', generatePaintings);
 router.get('/:titleId', getPaintings);
+router.post('/:paintingId/regenerate', regeneratePainting);
 
 module.exports = router; 

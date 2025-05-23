@@ -15,32 +15,58 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Serve static files (uploads)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Routes
+// Serve frontend static files (CSS, JS, images)
+app.use(express.static(__dirname));
+
+// API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/titles', titleRoutes);
 app.use('/api/paintings', paintingRoutes);
 app.use('/api/references', referenceRoutes);
 
-// Config endpoint to provide server information to frontend
+// Config endpoint
 app.get('/api/config', (req, res) => {
   res.json({
-    serverIP: process.env.SERVER_IP,
-    apiPort: process.env.PORT || 3000
+    serverIP: process.env.SERVER_IP || 'localhost',
+    apiPort: process.env.PORT || 3000,
+    environment: process.env.NODE_ENV || 'development'
   });
 });
 
-// Root route
+// Serve index.html for the root route and any non-API routes
 app.get('/', (req, res) => {
-  res.json({ message: 'AI Image Generator API' });
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+// Handle SPA routing - serve index.html for any non-API routes
+app.get('*', (req, res) => {
+  // Don't serve index.html for API routes
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({ error: 'API endpoint not found' });
+  }
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err);
+  res.status(500).json({ error: 'Internal server error' });
 });
 
 // Initialize database and start server
 initializeDatabase()
   .then(() => {
-    app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`🚀 Server running on http://localhost:${PORT}`);
+      console.log(`📱 Frontend available at: http://localhost:${PORT}`);
+      console.log(`🔗 API available at: http://localhost:${PORT}/api`);
+      if (process.env.SERVER_IP) {
+        console.log(`🌐 External access: http://${process.env.SERVER_IP}:${PORT}`);
+      }
     });
   })
   .catch(err => {

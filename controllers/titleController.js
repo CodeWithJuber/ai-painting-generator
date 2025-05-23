@@ -2,6 +2,11 @@ const { pool } = require('../database');
 
 // Create a new title
 async function createTitle(req, res) {
+  console.log('CreateTitle called with:', {
+    user: req.user ? { id: req.user.id, username: req.user.username } : null,
+    body: req.body
+  });
+
   if (!req.user || !req.user.id) {
     console.error('User not authenticated properly');
     return res.status(401).json({ error: 'Authentication required' });
@@ -10,12 +15,17 @@ async function createTitle(req, res) {
   const { title, instructions } = req.body;
   const userId = req.user.id;
   
-  if (!title) {
+  console.log('Parsed values:', { title, instructions, userId });
+  
+  if (!title || title.trim() === '') {
+    console.error('Title is missing or empty');
     return res.status(400).json({ error: 'Title is required' });
   }
   
   try {
-    const params = [userId, title, instructions || null];
+    const params = [userId, title.trim(), instructions || null];
+    console.log('SQL parameters:', params);
+    
     // Validate parameters
     if (params.some(p => p === undefined)) {
       console.error('Attempted to execute query with undefined parameter:', { params });
@@ -27,15 +37,26 @@ async function createTitle(req, res) {
       params
     );
     
-    res.status(201).json({
+    console.log('Insert result:', result);
+    
+    const newTitle = {
       id: result.insertId,
-      title,
-      instructions,
+      title: title.trim(),
+      instructions: instructions || null,
       created_at: new Date()
-    });
+    };
+    
+    console.log('Sending response:', newTitle);
+    res.status(201).json(newTitle);
   } catch (error) {
     console.error('Error creating title:', error);
-    res.status(500).json({ error: 'Failed to create title' });
+    console.error('Error details:', {
+      message: error.message,
+      code: error.code,
+      errno: error.errno,
+      sql: error.sql
+    });
+    res.status(500).json({ error: 'Failed to create title: ' + error.message });
   }
 }
 
@@ -108,8 +129,13 @@ async function getTitle(req, res) {
 
 // Update a title
 async function updateTitle(req, res) {
+  console.log('UpdateTitle called with:');
+  console.log('- req.params:', req.params);
+  console.log('- req.body:', req.body);
+  console.log('- req.user:', req.user);
+
   if (!req.user || !req.user.id) {
-    console.error('User not authenticated properly');
+    console.error('User not authenticated properly:', req.user);
     return res.status(401).json({ error: 'Authentication required' });
   }
 
@@ -117,19 +143,37 @@ async function updateTitle(req, res) {
   const { title, instructions } = req.body;
   const userId = req.user.id;
   
-  if (!id) {
-    return res.status(400).json({ error: 'Title ID is required' });
+  // Convert id to number to ensure it's not undefined
+  const titleId = parseInt(id);
+  
+  console.log('Parsed values:');
+  console.log('- titleId:', titleId, typeof titleId);
+  console.log('- title:', title, typeof title);
+  console.log('- instructions:', instructions, typeof instructions);
+  console.log('- userId:', userId, typeof userId);
+  
+  if (!titleId || isNaN(titleId)) {
+    console.error('Invalid title ID:', id);
+    return res.status(400).json({ error: 'Valid title ID is required' });
   }
   
   if (!title) {
     return res.status(400).json({ error: 'Title is required' });
   }
   
+  if (!userId) {
+    console.error('User ID is missing from request');
+    return res.status(401).json({ error: 'User authentication error' });
+  }
+  
   try {
-    const params = [title, instructions || null, id, userId];
+    const params = [title, instructions || null, titleId, userId];
+    console.log('Final SQL parameters:', params);
+    console.log('Parameter types:', params.map(p => `${p} (${typeof p})`));
+    
     // Validate parameters
-    if (params.some(p => p === undefined)) {
-      console.error('Attempted to execute query with undefined parameter:', { params });
+    if (params.some(p => p === undefined || p === null && typeof p !== 'object')) {
+      console.error('Invalid parameter detected:', { params });
       return res.status(500).json({ error: 'Internal server error: Invalid query parameter detected' });
     }
 
@@ -138,18 +182,26 @@ async function updateTitle(req, res) {
       params
     );
     
+    console.log('Update result:', result);
+    
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: 'Title not found or you don\'t have permission to update it' });
     }
     
     res.status(200).json({
-      id: parseInt(id),
+      id: titleId,
       title,
       instructions,
       updated_at: new Date()
     });
   } catch (error) {
     console.error('Error updating title:', error);
+    console.error('Error details:', {
+      message: error.message,
+      code: error.code,
+      errno: error.errno,
+      sql: error.sql
+    });
     res.status(500).json({ error: 'Failed to update title' });
   }
 }
