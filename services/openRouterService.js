@@ -54,40 +54,66 @@ async function generateIdeas(titleId, titleText, instructions, previousIdeas = [
     const messages = [
       { 
         role: 'system', 
-        content: `You are a creative painting designer who generates painting concepts that match uploaded reference images.
+        content: `You are a creative painting designer who generates painting concepts that STRICTLY match uploaded reference images.
 
-IMPORTANT RULES:
-1. If reference images are provided, the painting concept MUST match the subject type and style of those images
-2. If reference shows a person (man/woman), generate portrait-style concepts featuring similar subjects
-3. If reference shows objects/landscapes, generate concepts featuring similar subjects
-4. Match the visual style, mood, and composition of the reference images
-5. Generate realistic, achievable painting concepts, not abstract or surreal art unless the reference is abstract
-6. Focus on the SUBJECT TYPE first (person, object, landscape, etc.) then apply creative variations`
+CRITICAL RULES - MUST FOLLOW:
+1. If reference images show a SINGLE PERSON/PORTRAIT, generate PORTRAIT painting concepts of that same subject type
+2. If reference images show REALISTIC PEOPLE/PORTRAITS, you MUST generate REALISTIC portrait painting concepts
+3. NEVER generate complex scenes, classrooms, or multiple people when reference shows a single person
+4. NEVER generate anime, cartoon, or fantasy themes when reference images show realistic people
+5. The painting concept MUST match the EXACT subject type and style of the reference images
+6. Focus on REALISTIC, achievable painting concepts that match the reference aesthetic
+7. If references show professional photography, generate professional portrait painting concepts
+
+PORTRAIT REFERENCE RULES:
+- Single person reference = Single person portrait concept
+- Professional photo reference = Professional portrait painting concept
+- Realistic reference = Realistic painting style
+
+FORBIDDEN when realistic portrait references are provided:
+- Anime style
+- Cartoon style  
+- Fantasy themes
+- Complex scenes with multiple people
+- Classroom or narrative scenes
+- Abstract art
+- Surreal concepts`
       }
     ];
 
-    // Create user message content
+    // Create user message content with stronger enforcement
     let userContent = [];
     
-    // Add text instruction
-    userContent.push({
-      type: 'text',
-      text: `Create a painting concept for the title: "${titleText}".
+    // Add text instruction with stronger reference enforcement
+    if (referenceImages.length > 0) {
+      userContent.push({
+        type: 'text',
+        text: `REFERENCE IMAGES PROVIDED: You have ${referenceImages.length} reference image(s) attached below.
+
+MANDATORY REQUIREMENTS:
+- ANALYZE the reference images first to understand the SUBJECT TYPE and VISUAL STYLE
+- If references show realistic portraits/photos of people, generate REALISTIC portrait painting concepts
+- If references show people, create portrait-style painting concepts featuring similar subjects  
+- MATCH the lighting, composition, and mood of the reference images
+- Generate concepts that could realistically be painted to match the reference style
+- STRICTLY AVOID anime, cartoon, or fantasy themes unless the reference images are in those styles
+
+Title: "${titleText}"
 ${instructions ? `Custom instructions: ${instructions}` : ''}
 ${previousIdeasSummary}
 
-${referenceImages.length > 0 ? 
-  `REFERENCE IMAGES PROVIDED: You have ${referenceImages.length} reference image(s). 
-  CRITICAL: Analyze these images and generate a painting concept that matches the SUBJECT TYPE and STYLE shown in the references.
-  - If the reference shows a person, create a portrait-style concept
-  - If the reference shows an object, create a concept featuring similar objects
-  - Match the visual style, lighting, and mood of the reference images
-  - Generate a realistic painting concept that could actually match the reference style` :
-  'No reference images provided. Generate a creative painting concept based on the title and instructions.'
-}
+CRITICAL: The painting concept MUST match the style and subject type shown in the reference images. If the references show realistic people, generate realistic portrait concepts. DO NOT default to anime or cartoon styles.`
+      });
+    } else {
+      userContent.push({
+        type: 'text',
+        text: `Create a painting concept for the title: "${titleText}".
+${instructions ? `Custom instructions: ${instructions}` : ''}
+${previousIdeasSummary}
 
-Please generate a completely new painting idea that ${referenceImages.length > 0 ? 'matches the reference images' : 'hasn\'t been suggested yet'}.`
-    });
+No reference images provided. Generate a creative painting concept based on the title and instructions.`
+      });
+    }
 
     // Add reference images to the message (limit to 2 for API efficiency)
     if (referenceImages.length > 0) {
@@ -115,17 +141,17 @@ Please generate a completely new painting idea that ${referenceImages.length > 0
         type: 'function',
         function: {
           name: 'savePaintingIdea',
-          description: 'Save a painting idea that matches the reference images',
+          description: 'Save a painting idea that STRICTLY matches the reference images style and subject',
           parameters: {
             type: 'object',
             properties: {
               summary: {
                 type: 'string',
-                description: 'A short summary of the painting idea that matches the reference style and subject (30-50 words)'
+                description: 'A short summary of the painting idea that MATCHES the reference style and subject. If references show realistic people, describe a realistic portrait concept (30-50 words)'
               },
               fullPrompt: {
                 type: 'string',
-                description: 'The full prompt to generate this painting image, ensuring it matches the reference images\' subject type and style (100-200 words with detailed visual instructions)'
+                description: 'The full prompt to generate this painting image, ensuring it MATCHES the reference images subject type and style. If references show realistic people, create a realistic portrait prompt, NOT anime or cartoon (100-200 words with detailed visual instructions)'
               }
             },
             required: ['summary', 'fullPrompt']
@@ -134,7 +160,7 @@ Please generate a completely new painting idea that ${referenceImages.length > 0
       }],
       tool_choice: { type: 'function', function: { name: 'savePaintingIdea' } },
       max_tokens: 1000,
-      temperature: 0.7
+      temperature: 0.3 // Lower temperature for more consistent results
     };
 
     const response = await axios.post(OPENROUTER_URL, requestData, {
@@ -144,7 +170,7 @@ Please generate a completely new painting idea that ${referenceImages.length > 0
         'HTTP-Referer': 'http://localhost:3000',
         'X-Title': 'AI Painting Generator'
       },
-      timeout: 60000 // Increased timeout for image processing
+      timeout: 60000
     });
 
     if (!response.data || !response.data.choices || !response.data.choices[0]) {
@@ -161,6 +187,37 @@ Please generate a completely new painting idea that ${referenceImages.length > 0
 
     if (!ideaData.summary || !ideaData.fullPrompt) {
       throw new Error('Incomplete idea data received from AI');
+    }
+
+    // Enhanced validation to catch anime/cartoon AND complex scenes when portrait references exist
+    if (referenceImages.length > 0) {
+      const isAnimeResponse = ideaData.summary.toLowerCase().includes('anime') || 
+                             ideaData.fullPrompt.toLowerCase().includes('anime') ||
+                             ideaData.summary.toLowerCase().includes('cartoon') ||
+                             ideaData.fullPrompt.toLowerCase().includes('cartoon');
+      
+      // Check if it's a complex scene when we have portrait references
+      const isComplexScene = ideaData.fullPrompt.toLowerCase().includes('classroom') ||
+                             ideaData.fullPrompt.toLowerCase().includes('teacher') ||
+                             ideaData.fullPrompt.toLowerCase().includes('student') ||
+                             ideaData.fullPrompt.toLowerCase().includes('thought bubble') ||
+                             ideaData.fullPrompt.toLowerCase().includes('multiple people') ||
+                             ideaData.fullPrompt.toLowerCase().includes('scene with');
+      
+      if (isAnimeResponse) {
+        console.log('⚠️ Detected anime/cartoon response despite realistic references - forcing realistic style');
+        ideaData.summary = ideaData.summary.replace(/anime|cartoon/gi, 'realistic portrait');
+        ideaData.fullPrompt = ideaData.fullPrompt.replace(/anime|cartoon/gi, 'realistic portrait painting');
+      }
+      
+      if (isComplexScene) {
+        console.log('⚠️ Detected complex scene response for portrait reference - creating proper portrait concept');
+        
+        // Create a proper portrait concept based on the reference
+        ideaData.summary = `A realistic portrait painting capturing the subject's likeness and character in a professional style that matches the reference image.`;
+        
+        ideaData.fullPrompt = `A realistic portrait painting of a person, painted in a classical portrait style. The composition should match the reference image with similar lighting, professional background treatment, and framing. Focus on capturing the subject's facial features, expression, and attire details with realistic proportions and professional painting techniques. Use traditional portrait painting methods with careful attention to skin tones, fabric textures, and overall composition that reflects the style and quality of the reference photograph. Professional studio lighting and clean background treatment.`;
+      }
     }
 
     // Save to database

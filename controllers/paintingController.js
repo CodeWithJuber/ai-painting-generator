@@ -296,10 +296,12 @@ async function getPaintings(req, res) {
         try {
           const refIds = JSON.parse(row.used_reference_ids);
           if (refIds && Array.isArray(refIds) && refIds.length > 0) {
-            usedRefIdsList = refIds.filter(id => id != null && serverReferenceDataMap.hasOwnProperty(id));
+            usedRefIdsList = refIds.filter(id => id != null);
             referenceCount = usedRefIdsList.length;
           }
-        } catch (e) { /* Error already logged */ }
+        } catch (e) {
+          console.error(`Error parsing used_reference_ids for painting ${row.id}:`, e.message);
+        }
       }
       
       const promptDetails = {

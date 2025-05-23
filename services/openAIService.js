@@ -12,7 +12,7 @@ if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
 
-// Enhanced function to analyze reference images with subject-focused analysis
+// Enhanced function to analyze reference images without identifying people
 async function analyzeReferenceImages(references) {
   if (!references || references.length === 0) {
     console.log('No reference images provided for analysis');
@@ -20,7 +20,7 @@ async function analyzeReferenceImages(references) {
   }
 
   try {
-    console.log(`\n🔍 ANALYZING ${references.length} REFERENCE IMAGES FOR SUBJECT & STYLE MATCHING`);
+    console.log(`\n🔍 ANALYZING ${references.length} REFERENCE IMAGES FOR STYLE MATCHING`);
     
     // Prepare images for Vision API
     const imageMessages = references.slice(0, 2).map((ref, index) => {
@@ -40,42 +40,43 @@ async function analyzeReferenceImages(references) {
         content: [
           {
             type: "text",
-            text: `You are an expert image analyzer for AI art generation. Analyze these reference images and provide EXACT specifications for generating similar images.
+            text: `Analyze these reference images for TECHNICAL and ARTISTIC characteristics only. DO NOT identify or describe any people. Focus ONLY on:
 
-CRITICAL ANALYSIS - ANSWER EACH SECTION:
+TECHNICAL ANALYSIS (NO PERSON IDENTIFICATION):
 
-1. MAIN SUBJECT IDENTIFICATION:
-   - What is the primary subject? (person, man, woman, child, animal, object, landscape, etc.)
-   - Age and gender if it's a person
-   - Specific characteristics of the subject
-   - Pose, expression, or positioning
+1. PHOTOGRAPHY STYLE:
+   - Is this a professional studio photograph, casual photo, or artistic image?
+   - Camera settings apparent (shallow/deep depth of field, etc.)
+   - Image quality and resolution characteristics
 
-2. VISUAL STYLE & MEDIUM:
-   - Photography type (portrait, headshot, full body, etc.)
-   - Art style (realistic photo, digital art, painting, sketch, etc.)
-   - Quality level (professional, amateur, artistic, etc.)
+2. LIGHTING SETUP:
+   - Studio lighting vs natural lighting vs dramatic lighting
+   - Light direction (front-lit, side-lit, backlit)
+   - Soft vs hard lighting quality
+   - Shadow characteristics and contrast levels
 
-3. LIGHTING & MOOD:
-   - Lighting setup (studio, natural, dramatic, soft, etc.)
-   - Light direction and intensity
-   - Overall mood (serious, happy, dramatic, casual, etc.)
+3. COMPOSITION ELEMENTS:
+   - Framing style (tight crop, medium shot, wide shot)
+   - Background treatment (solid color, blurred, detailed environment)
+   - Overall composition balance and rule of thirds usage
 
-4. COMPOSITION & FRAMING:
-   - Camera angle (front view, profile, 3/4 view, etc.)
-   - Framing (close-up, medium shot, full body, etc.)
-   - Background (solid color, blurred, detailed, etc.)
+4. COLOR CHARACTERISTICS:
+   - Color palette (warm, cool, neutral tones)
+   - Saturation levels (vibrant, muted, desaturated)
+   - Color temperature and mood
+   - Any color grading or filters applied
 
-5. COLOR & TONE:
-   - Dominant colors
-   - Color temperature (warm, cool, neutral)
-   - Contrast level (high, medium, low)
+5. ARTISTIC STYLE:
+   - Realistic photography vs stylized vs artistic interpretation
+   - Professional commercial style vs casual vs artistic
+   - Any post-processing effects or artistic treatments
 
-6. TECHNICAL STYLE:
-   - Image quality (sharp, soft, grainy, etc.)
-   - Depth of field
-   - Any special effects or filters
+6. VISUAL MOOD:
+   - Professional/formal vs casual/relaxed atmosphere
+   - Clean/minimal vs detailed/busy composition
+   - Modern vs classic vs vintage aesthetic
 
-IMPORTANT: Focus on describing the SUBJECT TYPE first, then the visual style. If it's a man, say "man" clearly. If it's a woman, say "woman" clearly. Be very specific about what the main subject is.`
+Provide specific technical details that can guide image generation to match this exact photographic and artistic style, focusing purely on the technical and aesthetic aspects.`
           },
           ...imageMessages
         ]
@@ -105,43 +106,100 @@ IMPORTANT: Focus on describing the SUBJECT TYPE first, then the visual style. If
     
   } catch (error) {
     console.error('❌ Error analyzing reference images:', error);
-    return `Professional portrait photography of a person with studio lighting, realistic rendering, clean composition, and high-quality photographic techniques. Natural pose and expression.`;
+    
+    // Enhanced fallback analysis based on common portrait characteristics
+    console.log('🔄 Using enhanced fallback analysis for portrait-style images');
+    return `TECHNICAL STYLE ANALYSIS:
+1. PHOTOGRAPHY STYLE: Professional portrait photography with studio-quality setup
+2. LIGHTING SETUP: Professional studio lighting with soft, even illumination from multiple angles
+3. COMPOSITION: Clean portrait composition with subject as main focus, professional framing
+4. COLOR CHARACTERISTICS: Professional color grading with natural skin tones and balanced exposure
+5. ARTISTIC STYLE: High-quality realistic photography with commercial/professional standards
+6. VISUAL MOOD: Professional, clean, and polished aesthetic suitable for commercial use
+7. BACKGROUND: Clean, professional background treatment (likely solid or softly blurred)
+8. TECHNICAL QUALITY: High resolution, sharp focus, professional camera work with proper exposure
+
+STYLE INSTRUCTION: Generate images with professional photography quality, studio lighting setup, clean composition, and realistic photographic rendering that matches commercial portrait photography standards.`;
   }
 }
 
-// Enhanced function to create subject-focused prompt
-function createSubjectMatchedPrompt(originalPrompt, referenceAnalysis) {
+// Enhanced function to create style-matched prompt
+function createStyleMatchedPrompt(originalPrompt, referenceAnalysis) {
   if (!referenceAnalysis) {
     return originalPrompt;
   }
 
-  return `REFERENCE IMAGE ANALYSIS (MUST MATCH EXACTLY):
+  // Detect if we're dealing with realistic photography references
+  const isPhotographicReference = referenceAnalysis.toLowerCase().includes('photograph') || 
+                                 referenceAnalysis.toLowerCase().includes('studio') ||
+                                 referenceAnalysis.toLowerCase().includes('professional');
+
+  // Check if the original prompt is asking for anime/cartoon
+  const isAnimeRequest = originalPrompt.toLowerCase().includes('anime') || 
+                        originalPrompt.toLowerCase().includes('cartoon') ||
+                        originalPrompt.toLowerCase().includes('manga') ||
+                        originalPrompt.toLowerCase().includes('animated');
+
+  // If we have photographic references but anime is requested, we need to be explicit
+  if (isPhotographicReference && isAnimeRequest) {
+    return `STYLE CONFLICT RESOLUTION:
+The reference images show photographic/realistic style, but the request is for anime/cartoon style.
+
+REFERENCE TECHNICAL ELEMENTS TO ADAPT:
 ${referenceAnalysis}
 
-GENERATION REQUIREMENTS:
-1. SUBJECT MATCHING: The main subject type MUST match the reference (if reference shows a man, generate a man; if woman, generate woman, etc.)
-2. STYLE MATCHING: Use the exact same visual style, lighting, and composition as described above
-3. POSE & EXPRESSION: Match the pose, expression, and positioning from the reference
-4. TECHNICAL SPECS: Apply the same photographic technique, lighting setup, and image quality
-5. BACKGROUND: Use similar background treatment as the reference
-6. COLOR PALETTE: Match the color scheme and mood from the reference
+ANIME ADAPTATION INSTRUCTIONS:
+- Convert the photographic composition to anime/manga style
+- Maintain the lighting mood and direction from the reference
+- Adapt the color palette to anime aesthetics
+- Keep the same framing and composition structure
+- Use anime/manga artistic techniques while preserving the reference's mood
 
-SUBJECT DESCRIPTION TO APPLY THE STYLE TO:
+ANIME SUBJECT TO CREATE:
 ${originalPrompt}
 
-FINAL INSTRUCTION: 
-- Generate the subject described in the prompt using EXACTLY the same type of subject, style, lighting, and composition as the reference images
-- If the reference shows a man, the output must show a man
-- If the reference shows a woman, the output must show a woman  
-- Match the age, pose, expression, and overall appearance style
-- DO NOT create abstract, surreal, or fantasy art unless the reference is abstract
-- Focus on realistic representation that clearly matches the reference subject type and style`;
+FINAL INSTRUCTION: Create this in anime/manga style while adapting the composition, lighting mood, and color palette from the photographic reference.`;
+  }
+
+  // If we have photographic references and no anime request, stay realistic
+  if (isPhotographicReference && !isAnimeRequest) {
+    return `PHOTOGRAPHIC STYLE MATCHING REQUIREMENTS:
+${referenceAnalysis}
+
+REALISTIC PHOTOGRAPHY INSTRUCTIONS:
+- Generate a realistic photograph, NOT anime or cartoon style
+- Use professional photography techniques and lighting
+- Match the exact technical specifications from the reference analysis
+- Maintain photographic realism and quality
+- Use the same composition, lighting, and background treatment
+- Apply professional color grading and exposure settings
+
+PHOTOGRAPHIC SUBJECT TO CREATE:
+${originalPrompt}
+
+CRITICAL: Generate this as a realistic photograph using professional photography standards, matching the technical style described in the reference analysis. DO NOT use anime, cartoon, or illustrated styles.`;
+  }
+
+  // Default case - use reference elements
+  return `REFERENCE STYLE ELEMENTS TO INCORPORATE:
+${referenceAnalysis}
+
+STYLE ADAPTATION INSTRUCTIONS:
+- Match the composition and framing style from the reference
+- Use similar lighting mood and direction
+- Apply comparable color palette and atmosphere
+- Maintain the same level of quality and technical standards
+
+SUBJECT TO CREATE:
+${originalPrompt}
+
+INSTRUCTION: Create this subject while incorporating the technical and artistic elements from the reference analysis.`;
 }
 
-// Enhanced image generation with better subject matching
+// Enhanced image generation with better style matching
 async function generateImage(ideaId, prompt, references = []) {
   try {
-    console.log(`\n🎨 STARTING SUBJECT-MATCHED IMAGE GENERATION`);
+    console.log(`\n🎨 STARTING STYLE-MATCHED IMAGE GENERATION`);
     console.log(`📝 Idea ID: ${ideaId}`);
     console.log(`🖼️  Reference images: ${references.length}`);
     console.log(`📄 Original prompt: ${prompt.substring(0, 150)}...`);
@@ -163,14 +221,14 @@ async function generateImage(ideaId, prompt, references = []) {
     let finalPrompt = prompt;
     
     if (references && references.length > 0) {
-      console.log('\n🔍 ANALYZING REFERENCE IMAGES FOR SUBJECT & STYLE MATCHING...');
+      console.log('\n🔍 ANALYZING REFERENCE IMAGES FOR STYLE MATCHING...');
       
       const referenceAnalysis = await analyzeReferenceImages(references);
       
       if (referenceAnalysis) {
-        finalPrompt = createSubjectMatchedPrompt(prompt, referenceAnalysis);
+        finalPrompt = createStyleMatchedPrompt(prompt, referenceAnalysis);
         
-        console.log('\n📝 SUBJECT-MATCHED PROMPT CREATED:');
+        console.log('\n📝 STYLE-MATCHED PROMPT CREATED:');
         console.log('─'.repeat(80));
         console.log(finalPrompt.substring(0, 1500) + '...');
         console.log('─'.repeat(80));
@@ -179,18 +237,23 @@ async function generateImage(ideaId, prompt, references = []) {
       console.log('⚠️  No reference images provided - using original prompt');
     }
 
-    // Enhanced DALL-E 3 settings for better subject matching
+    // Enhanced DALL-E 3 settings
     const requestBody = {
       model: 'dall-e-3',
       prompt: finalPrompt.substring(0, 4000),
       size: '1024x1024',
       quality: 'hd',
-      style: 'natural', // Natural style for realistic representation
+      style: 'natural', // Force natural style for realism
       n: 1,
       response_format: 'b64_json'
     };
 
-    console.log('\n🚀 SENDING SUBJECT-MATCHED REQUEST TO DALL-E 3...');
+    // Add explicit style instruction if we have photographic references
+    if (references && references.length > 0) {
+      requestBody.prompt = `IMPORTANT: Generate a realistic photograph, NOT anime or cartoon style. ${requestBody.prompt}`;
+    }
+
+    console.log('\n🚀 SENDING STYLE-MATCHED REQUEST TO DALL-E 3...');
     
     const response = await axios.post('https://api.openai.com/v1/images/generations', requestBody, {
       headers: {
@@ -222,7 +285,7 @@ async function generateImage(ideaId, prompt, references = []) {
       [`uploads/${fileName}`, `data:image/png;base64,${imageData}`, 'completed', usedReferenceIdsJSON, ideaId]
     );
 
-    console.log('✅ DATABASE UPDATED - SUBJECT-MATCHED GENERATION COMPLETE\n');
+    console.log('✅ DATABASE UPDATED - STYLE-MATCHED GENERATION COMPLETE\n');
 
     return {
       ideaId,
@@ -284,7 +347,7 @@ async function regenerateImage(paintingId) {
       ['generating_image', paintingId]
     );
     
-    // Regenerate with subject matching
+    // Regenerate with style matching
     const result = await generateImage(painting.idea_id, painting.full_prompt, references);
     
     console.log(`✅ REGENERATION COMPLETE FOR PAINTING ${paintingId}`);

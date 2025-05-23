@@ -891,31 +891,67 @@ async function retryGeneration(paintingId) {
 function showPromptDetails(painting) {
     if (!painting || !promptModal) return;
     
-    const modalTitle = document.getElementById('modal-title');
-    const modalSummary = document.getElementById('modal-summary');
-    const modalInstructions = document.getElementById('modal-instructions');
-    const modalPrompt = document.getElementById('modal-prompt');
-    const modalReferences = document.getElementById('modal-references');
+    const modalImage = document.getElementById('modal-image');
+    const modalTitle = document.getElementById('prompt-title');
+    const modalSummary = document.getElementById('prompt-summary');
+    const modalInstructions = document.getElementById('prompt-instructions');
+    const modalPrompt = document.getElementById('full-prompt');
+    const modalReferences = document.getElementById('reference-thumbnails');
+    const referenceCount = document.getElementById('reference-count');
     const modalReferenceAnalysis = document.getElementById('modal-reference-analysis');
+    
+    // Set the painting preview image
+    if (modalImage) {
+        const imageSource = painting.image_data || painting.image_url;
+        if (imageSource) {
+            modalImage.src = imageSource;
+            modalImage.style.display = 'block';
+        } else {
+            modalImage.style.display = 'none';
+        }
+    }
     
     if (modalTitle) modalTitle.textContent = painting.promptDetails?.title || 'Unknown Title';
     if (modalSummary) modalSummary.textContent = painting.promptDetails?.summary || painting.summary || 'No summary available';
     if (modalInstructions) modalInstructions.textContent = painting.promptDetails?.instructions || 'No custom instructions provided';
-    if (modalPrompt) modalPrompt.textContent = painting.promptDetails?.fullPrompt || 'Prompt not available';
+    if (modalPrompt) modalPrompt.textContent = painting.promptDetails?.fullPrompt || painting.fullPrompt || 'Prompt not available';
     
-    // Display reference images
-    if (modalReferences) {
+    // Handle reference images and count
+    if (modalReferences && referenceCount) {
         modalReferences.innerHTML = '';
         
-        if (painting.promptDetails?.referenceImages && painting.promptDetails.referenceImages.length > 0) {
-            painting.promptDetails.referenceImages.forEach(ref => {
-                const img = document.createElement('img');
-                img.src = ref.image_data;
-                img.alt = 'Reference Image';
-                img.className = 'reference-image-small';
-                img.style.cssText = 'width: 80px; height: 80px; object-fit: cover; margin: 5px; border-radius: 4px; border: 1px solid #ddd;';
-                modalReferences.appendChild(img);
+        // Get reference data from the painting
+        let referenceImages = [];
+        let refCount = 0;
+        
+        // Check if we have reference IDs and reference data map
+        if (painting.promptDetails?.referenceImages && Array.isArray(painting.promptDetails.referenceImages)) {
+            referenceImages = painting.promptDetails.referenceImages;
+            refCount = referenceImages.length;
+        } else if (painting.promptDetails?.referenceCount) {
+            refCount = painting.promptDetails.referenceCount;
+        }
+        
+        // Update the reference count
+        referenceCount.textContent = refCount;
+        
+        // Display reference images if available
+        if (referenceImages.length > 0) {
+            referenceImages.forEach((refId) => {
+                // Check if we have the actual image data in the referenceDataMap
+                const imageData = window.referenceDataMap && window.referenceDataMap[refId];
+                if (imageData) {
+                    const img = document.createElement('img');
+                    img.src = imageData;
+                    img.alt = 'Reference Image';
+                    img.className = 'reference-image-small';
+                    img.style.cssText = 'width: 80px; height: 80px; object-fit: cover; margin: 5px; border-radius: 4px; border: 1px solid #ddd;';
+                    modalReferences.appendChild(img);
+                }
             });
+        } else if (refCount > 0) {
+            // Show that references were used but we don't have the image data
+            modalReferences.innerHTML = `<p>${refCount} reference image(s) were used for this generation</p>`;
         } else {
             modalReferences.innerHTML = '<p>No reference images used</p>';
         }
@@ -1030,6 +1066,9 @@ async function loadTitle(title) {
         
         const result = await getPaintings(title.id);
         if (result.paintings) {
+            // Store reference data map globally for use in modal
+            window.referenceDataMap = result.referenceDataMap || {};
+            
             const hasActiveGenerations = result.paintings.some(p => 
                 p.status !== 'completed' && p.status !== 'failed'
             );
