@@ -36,13 +36,22 @@ async function generatePaintings(req, res) {
     
     const title = titleRows[0];
     
-    // Get reference images
-    const [refRows] = await pool.execute(
-      'SELECT id, image_data FROM references2 WHERE title_id = ? OR (user_id = ? AND is_global = 1)',
-      [titleId, req.user.id]
+    // Force refresh reference images before generation
+    console.log('🔄 FORCING REFERENCE REFRESH BEFORE GENERATION');
+    
+    // Clear any potential query cache
+    await pool.execute('SELECT 1'); // Dummy query to refresh connection
+    
+    // Get fresh references with explicit ordering
+    const [freshReferences] = await pool.execute(
+      'SELECT id, title_id, image_data, created_at FROM references2 WHERE title_id = ? OR is_global = 1 ORDER BY created_at DESC',
+      [titleId]
     );
     
-    const references = refRows.map(row => ({ id: row.id, image_data: row.image_data }));
+    console.log(`🔍 FRESH REFERENCES FOUND: ${freshReferences.length}`);
+    freshReferences.forEach((ref, index) => {
+      console.log(`   Fresh Ref ${index + 1}: ID=${ref.id}, Created=${ref.created_at}`);
+    });
     
     // Get previous ideas for this title to avoid duplication
     const [prevIdeas] = await pool.execute(
@@ -72,7 +81,7 @@ async function generatePaintings(req, res) {
           summary: 'Generating painting concept...',
           title: title.title,
           instructions: title.instructions || 'No custom instructions provided',
-          referenceCount: references.length,
+          referenceCount: freshReferences.length,
           referenceImages: [],
           fullPrompt: ''
         }
@@ -80,7 +89,7 @@ async function generatePaintings(req, res) {
     }
     
     // Start background processing
-    processGenerationInBackground(titleId, title, references, prevIdeas, quantity, placeholderPaintings);
+    processGenerationInBackground(titleId, title, freshReferences, prevIdeas, quantity, placeholderPaintings);
     
     // Return immediately with placeholders
     res.status(200).json({

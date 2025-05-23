@@ -8,8 +8,12 @@ const apiRequest = async (endpoint, options = {}) => {
   const defaultOptions = {
     headers: {
       'Content-Type': 'application/json',
-      ...(token && { 'Authorization': `Bearer ${token}` })
-    }
+      ...(token && { 'Authorization': `Bearer ${token}` }),
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
+    },
+    credentials: 'include'
   };
   
   const finalOptions = {

@@ -123,86 +123,127 @@ STYLE INSTRUCTION: Generate images with professional photography quality, studio
   }
 }
 
-// Enhanced function to create style-matched prompt
+// Enhanced function to create style-matched prompt with length control
 function createStyleMatchedPrompt(originalPrompt, referenceAnalysis) {
   if (!referenceAnalysis) {
     return originalPrompt;
   }
 
-  // Detect if we're dealing with realistic photography references
-  const isPhotographicReference = referenceAnalysis.toLowerCase().includes('photograph') || 
-                                 referenceAnalysis.toLowerCase().includes('studio') ||
-                                 referenceAnalysis.toLowerCase().includes('professional');
-
-  // Check if the original prompt is asking for anime/cartoon
+  // Check if the original prompt is asking for realistic portraits vs. anime/cartoon
+  const isRealisticRequest = originalPrompt.toLowerCase().includes('realistic') || 
+                           originalPrompt.toLowerCase().includes('photograph') ||
+                           originalPrompt.toLowerCase().includes('portrait');
+  
   const isAnimeRequest = originalPrompt.toLowerCase().includes('anime') || 
                         originalPrompt.toLowerCase().includes('cartoon') ||
-                        originalPrompt.toLowerCase().includes('manga') ||
-                        originalPrompt.toLowerCase().includes('animated');
+                        originalPrompt.toLowerCase().includes('manga');
 
-  // If we have photographic references but anime is requested, we need to be explicit
-  if (isPhotographicReference && isAnimeRequest) {
-    return `STYLE CONFLICT RESOLUTION:
-The reference images show photographic/realistic style, but the request is for anime/cartoon style.
+  // Create a condensed version of the reference analysis
+  const condensedAnalysis = condenseReferenceAnalysis(referenceAnalysis);
 
-REFERENCE TECHNICAL ELEMENTS TO ADAPT:
-${referenceAnalysis}
+  // If reference suggests portrait style but prompt asks for anime, adjust accordingly
+  if (referenceAnalysis.toLowerCase().includes('portrait') && 
+      referenceAnalysis.toLowerCase().includes('professional') && 
+      !isAnimeRequest) {
+    
+    const stylePrompt = `REFERENCE STYLE: ${condensedAnalysis}
 
-ANIME ADAPTATION INSTRUCTIONS:
-- Convert the photographic composition to anime/manga style
-- Maintain the lighting mood and direction from the reference
-- Adapt the color palette to anime aesthetics
-- Keep the same framing and composition structure
-- Use anime/manga artistic techniques while preserving the reference's mood
+STYLE REQUIREMENTS:
+- Use professional portrait composition and lighting as described
+- Apply realistic photographic quality and technical specifications
+- Match the background treatment and color palette from reference
+- Use similar camera angle and subject positioning
 
-ANIME SUBJECT TO CREATE:
-${originalPrompt}
+SUBJECT: ${originalPrompt}
 
-FINAL INSTRUCTION: Create this in anime/manga style while adapting the composition, lighting mood, and color palette from the photographic reference.`;
+INSTRUCTION: Generate this subject using the exact visual style, lighting, and composition described in the reference analysis with professional photographic quality.`;
+
+    // Ensure we don't exceed 4000 characters
+    return truncatePrompt(stylePrompt, 3900);
   }
 
-  // If we have photographic references and no anime request, stay realistic
-  if (isPhotographicReference && !isAnimeRequest) {
-    return `PHOTOGRAPHIC STYLE MATCHING REQUIREMENTS:
-${referenceAnalysis}
+  // For anime/cartoon requests, still try to match some style elements
+  const artisticPrompt = `REFERENCE ELEMENTS: ${condensedAnalysis}
 
-REALISTIC PHOTOGRAPHY INSTRUCTIONS:
-- Generate a realistic photograph, NOT anime or cartoon style
-- Use professional photography techniques and lighting
-- Match the exact technical specifications from the reference analysis
-- Maintain photographic realism and quality
-- Use the same composition, lighting, and background treatment
-- Apply professional color grading and exposure settings
+STYLE ADAPTATION:
+- Adapt composition and framing from reference
+- Use similar lighting mood and color palette
+- Maintain quality and attention to detail
 
-PHOTOGRAPHIC SUBJECT TO CREATE:
-${originalPrompt}
+SUBJECT: ${originalPrompt}
 
-CRITICAL: Generate this as a realistic photograph using professional photography standards, matching the technical style described in the reference analysis. DO NOT use anime, cartoon, or illustrated styles.`;
-  }
+INSTRUCTION: Create this subject incorporating the composition, lighting, and quality elements from the reference.`;
 
-  // Default case - use reference elements
-  return `REFERENCE STYLE ELEMENTS TO INCORPORATE:
-${referenceAnalysis}
-
-STYLE ADAPTATION INSTRUCTIONS:
-- Match the composition and framing style from the reference
-- Use similar lighting mood and direction
-- Apply comparable color palette and atmosphere
-- Maintain the same level of quality and technical standards
-
-SUBJECT TO CREATE:
-${originalPrompt}
-
-INSTRUCTION: Create this subject while incorporating the technical and artistic elements from the reference analysis.`;
+  return truncatePrompt(artisticPrompt, 3900);
 }
 
-// Enhanced image generation with better style matching
+// Function to condense reference analysis to key points
+function condenseReferenceAnalysis(analysis) {
+  if (!analysis || analysis.length < 500) {
+    return analysis;
+  }
+
+  // Extract key technical points
+  const keyPoints = [];
+  
+  // Extract lighting info
+  const lightingMatch = analysis.match(/lighting[^.]*\./gi);
+  if (lightingMatch) {
+    keyPoints.push(lightingMatch[0]);
+  }
+  
+  // Extract composition info
+  const compositionMatch = analysis.match(/composition[^.]*\./gi);
+  if (compositionMatch) {
+    keyPoints.push(compositionMatch[0]);
+  }
+  
+  // Extract color info
+  const colorMatch = analysis.match(/color[^.]*\./gi);
+  if (colorMatch) {
+    keyPoints.push(colorMatch[0]);
+  }
+  
+  // Extract style info
+  const styleMatch = analysis.match(/(professional|studio|portrait)[^.]*\./gi);
+  if (styleMatch) {
+    keyPoints.push(styleMatch[0]);
+  }
+
+  // If we couldn't extract key points, truncate the original
+  if (keyPoints.length === 0) {
+    return analysis.substring(0, 800) + "...";
+  }
+
+  return keyPoints.join(' ').substring(0, 800);
+}
+
+// Function to safely truncate prompt to specified length
+function truncatePrompt(prompt, maxLength) {
+  if (prompt.length <= maxLength) {
+    return prompt;
+  }
+  
+  // Try to truncate at a sentence boundary
+  const truncated = prompt.substring(0, maxLength);
+  const lastSentence = truncated.lastIndexOf('.');
+  
+  if (lastSentence > maxLength * 0.8) {
+    return truncated.substring(0, lastSentence + 1);
+  }
+  
+  // If no good sentence boundary, truncate at word boundary
+  const lastSpace = truncated.lastIndexOf(' ');
+  return truncated.substring(0, lastSpace) + '...';
+}
+
+// Updated generateImage function with better prompt length control
 async function generateImage(ideaId, prompt, references = []) {
   try {
     console.log(`\n🎨 STARTING STYLE-MATCHED IMAGE GENERATION`);
     console.log(`📝 Idea ID: ${ideaId}`);
     console.log(`🖼️  Reference images: ${references.length}`);
-    console.log(`📄 Original prompt: ${prompt.substring(0, 150)}...`);
+    console.log(`📄 Original prompt length: ${prompt.length} characters`);
     
     if (!OPENAI_API_KEY) {
       throw new Error('OpenAI API key is missing. Please check your .env file.');
@@ -228,32 +269,34 @@ async function generateImage(ideaId, prompt, references = []) {
       if (referenceAnalysis) {
         finalPrompt = createStyleMatchedPrompt(prompt, referenceAnalysis);
         
-        console.log('\n📝 STYLE-MATCHED PROMPT CREATED:');
+        console.log(`\n📝 STYLE-MATCHED PROMPT CREATED (${finalPrompt.length} chars):`);
         console.log('─'.repeat(80));
-        console.log(finalPrompt.substring(0, 1500) + '...');
+        console.log(finalPrompt.substring(0, 500) + '...');
         console.log('─'.repeat(80));
       }
     } else {
       console.log('⚠️  No reference images provided - using original prompt');
     }
 
+    // Ensure final prompt is within limits
+    if (finalPrompt.length > 4000) {
+      console.log(`⚠️  Prompt too long (${finalPrompt.length} chars), truncating to 3900...`);
+      finalPrompt = truncatePrompt(finalPrompt, 3900);
+      console.log(`✅ Truncated prompt length: ${finalPrompt.length} chars`);
+    }
+
     // Enhanced DALL-E 3 settings
     const requestBody = {
       model: 'dall-e-3',
-      prompt: finalPrompt.substring(0, 4000),
+      prompt: finalPrompt,
       size: '1024x1024',
       quality: 'hd',
-      style: 'natural', // Force natural style for realism
+      style: 'natural', // Natural style for better realism
       n: 1,
       response_format: 'b64_json'
     };
 
-    // Add explicit style instruction if we have photographic references
-    if (references && references.length > 0) {
-      requestBody.prompt = `IMPORTANT: Generate a realistic photograph, NOT anime or cartoon style. ${requestBody.prompt}`;
-    }
-
-    console.log('\n🚀 SENDING STYLE-MATCHED REQUEST TO DALL-E 3...');
+    console.log(`\n🚀 SENDING REQUEST TO DALL-E 3 (${finalPrompt.length} chars)...`);
     
     const response = await axios.post('https://api.openai.com/v1/images/generations', requestBody, {
       headers: {

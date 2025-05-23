@@ -7,35 +7,47 @@ async function uploadReference(req, res) {
     return res.status(401).json({ error: 'Authentication required' });
   }
 
-  const { titleId, imageData, isGlobal = false } = req.body;
-  const userId = req.user.id;
-  
-  if (!imageData) {
-    return res.status(400).json({ error: 'Image data is required' });
-  }
-  
-  // If not global, validate titleId
-  if (!isGlobal && !titleId) {
-    return res.status(400).json({ error: 'Title ID is required for non-global references' });
-  }
-  
   try {
-    const [result] = await pool.execute(
-      'INSERT INTO references2 (title_id, user_id, image_data, is_global) VALUES (?, ?, ?, ?)',
-      [isGlobal ? null : titleId, userId, imageData, isGlobal ? 1 : 0]
+    console.log('🖼️ REFERENCE UPLOAD STARTED');
+    const { titleId, imageData, isGlobal } = req.body;
+    const userId = req.user.id;
+
+    console.log('Upload details:', {
+      titleId: titleId,
+      userId: userId,
+      isGlobal: isGlobal,
+      hasImageData: !!imageData
+    });
+
+    // Validate required fields
+    if (!titleId || !imageData) {
+      return res.status(400).json({ error: 'Title ID and image data are required' });
+    }
+
+    // Clear old references for this title first
+    console.log(`🗑️ CLEARING OLD REFERENCES FOR TITLE ${titleId}`);
+    const [deleteResult] = await pool.execute(
+      'DELETE FROM references2 WHERE title_id = ? AND user_id = ?',
+      [titleId, userId]
     );
-    
-    // Return complete reference data including image_data
-    res.status(201).json({
+    console.log(`✅ CLEARED ${deleteResult.affectedRows} OLD REFERENCES`);
+
+    // Insert new reference with correct title_id (not global)
+    const [result] = await pool.execute(
+      'INSERT INTO references2 (title_id, image_data, is_global, user_id) VALUES (?, ?, ?, ?)',
+      [titleId, imageData, 0, userId] // Set is_global to 0 for title-specific
+    );
+
+    console.log(`✅ REFERENCE UPLOADED SUCCESSFULLY - ID: ${result.insertId} for TITLE: ${titleId}`);
+
+    res.json({
+      success: true,
       id: result.insertId,
-      title_id: isGlobal ? null : titleId,
-      user_id: userId,
-      image_data: imageData, // Include the image data in response
-      is_global: isGlobal,
-      created_at: new Date()
+      titleId: titleId,
+      message: 'Reference image uploaded successfully'
     });
   } catch (error) {
-    console.error('Error uploading reference image:', error);
+    console.error('❌ REFERENCE UPLOAD ERROR:', error);
     res.status(500).json({ error: 'Failed to upload reference image' });
   }
 }
@@ -124,8 +136,35 @@ async function deleteReference(req, res) {
   }
 }
 
+// Add this function to clear old references
+const clearOldReferences = async (req, res) => {
+  try {
+    const { titleId } = req.params;
+    const userId = req.user.id;
+
+    console.log(`🗑️ CLEARING OLD REFERENCES FOR TITLE ${titleId}`);
+
+    const [result] = await pool.execute(
+      'DELETE FROM references2 WHERE title_id = ? AND user_id = ?',
+      [titleId, userId]
+    );
+
+    console.log(`✅ CLEARED ${result.affectedRows} OLD REFERENCES`);
+
+    res.json({
+      success: true,
+      deletedCount: result.affectedRows,
+      message: 'Old references cleared successfully'
+    });
+  } catch (error) {
+    console.error('❌ ERROR CLEARING REFERENCES:', error);
+    res.status(500).json({ error: 'Failed to clear old references' });
+  }
+};
+
 module.exports = {
   uploadReference,
   getReferences,
-  deleteReference
+  deleteReference,
+  clearOldReferences
 }; 

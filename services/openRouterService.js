@@ -5,13 +5,27 @@ require('dotenv').config();
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
-// Function to get reference images for a title
+// Updated getReferenceImages function - only get title-specific references
 async function getReferenceImages(titleId) {
   try {
+    console.log(`🔍 FETCHING REFERENCE IMAGES FOR TITLE ${titleId}`);
+    
+    // Only get references for this specific title, not global ones
     const [references] = await pool.execute(
-      'SELECT id, image_data FROM references2 WHERE title_id = ? OR is_global = 1',
+      'SELECT id, title_id, is_global, image_data, created_at FROM references2 WHERE title_id = ? ORDER BY created_at DESC',
       [titleId]
     );
+    
+    console.log(`📸 FOUND ${references.length} TITLE-SPECIFIC REFERENCE IMAGES:`);
+    references.forEach((ref, index) => {
+      console.log(`   Reference ${index + 1}:`);
+      console.log(`   - ID: ${ref.id}`);
+      console.log(`   - Title ID: ${ref.title_id}`);
+      console.log(`   - Is Global: ${ref.is_global}`);
+      console.log(`   - Created: ${ref.created_at}`);
+      console.log(`   - Image data length: ${ref.image_data ? ref.image_data.length : 'NULL'}`);
+    });
+    
     return references;
   } catch (error) {
     console.error('Error fetching reference images:', error);
