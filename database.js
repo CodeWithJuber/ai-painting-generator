@@ -129,6 +129,20 @@ async function initializeDatabase() {
       console.log('Paintings table error_message already TEXT');
     }
     
+    try {
+      await connection.execute(`
+        ALTER TABLE paintings 
+        ADD COLUMN reference_analysis TEXT
+      `);
+      console.log('Added reference_analysis column to paintings table');
+    } catch (alterError) {
+      if (alterError.code === 'ER_DUP_FIELDNAME') {
+        console.log('reference_analysis column already exists');
+      } else {
+        console.log('Could not add reference_analysis column:', alterError.message);
+      }
+    }
+    
     connection.release();
     console.log('Database initialized successfully');
   } catch (error) {

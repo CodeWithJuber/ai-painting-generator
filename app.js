@@ -889,86 +889,52 @@ async function retryGeneration(paintingId) {
 }
 
 function showPromptDetails(painting) {
-    if (!promptModal) return;
+    if (!painting || !promptModal) return;
     
-    try {
-        // Debug logging
-        console.log('Showing prompt details for painting:', painting);
+    const modalTitle = document.getElementById('modal-title');
+    const modalSummary = document.getElementById('modal-summary');
+    const modalInstructions = document.getElementById('modal-instructions');
+    const modalPrompt = document.getElementById('modal-prompt');
+    const modalReferences = document.getElementById('modal-references');
+    const modalReferenceAnalysis = document.getElementById('modal-reference-analysis');
+    
+    if (modalTitle) modalTitle.textContent = painting.promptDetails?.title || 'Unknown Title';
+    if (modalSummary) modalSummary.textContent = painting.promptDetails?.summary || painting.summary || 'No summary available';
+    if (modalInstructions) modalInstructions.textContent = painting.promptDetails?.instructions || 'No custom instructions provided';
+    if (modalPrompt) modalPrompt.textContent = painting.promptDetails?.fullPrompt || 'Prompt not available';
+    
+    // Display reference images
+    if (modalReferences) {
+        modalReferences.innerHTML = '';
         
-        // Set image
-        if (modalImage) {
-            modalImage.src = painting.image_data || painting.image_url || '';
-        }
-        
-        // Set summary
-        if (promptSummary) {
-            promptSummary.textContent = painting.summary || 'No summary available';
-        }
-        
-        // Set title and instructions from current title
-        if (promptTitle) {
-            promptTitle.textContent = currentTitle?.title || 'Unknown Title';
-        }
-        
-        if (promptInstructions) {
-            promptInstructions.textContent = currentTitle?.instructions || 'No custom instructions';
-        }
-        
-        // Handle reference images
-        let referenceImages = [];
-        let refCount = 0;
-        
-        // Try to get reference data from different sources
-        if (painting.promptDetails && painting.promptDetails.referenceImages) {
-            const referenceIds = painting.promptDetails.referenceImages;
-            refCount = painting.promptDetails.referenceCount || referenceIds.length;
-            
-            // Convert reference IDs to actual image data using currentReferenceDataMap
-            referenceImages = referenceIds.map(refId => {
-                const imageData = currentReferenceDataMap[refId];
-                return imageData ? { image_data: imageData } : null;
-            }).filter(ref => ref !== null);
-        }
-        
-        if (referenceCount) {
-            referenceCount.textContent = refCount;
-        }
-        
-        if (referenceThumbnails) {
-            referenceThumbnails.innerHTML = '';
-            referenceImages.forEach(ref => {
+        if (painting.promptDetails?.referenceImages && painting.promptDetails.referenceImages.length > 0) {
+            painting.promptDetails.referenceImages.forEach(ref => {
                 const img = document.createElement('img');
                 img.src = ref.image_data;
-                img.className = 'reference-thumbnail';
-                img.style.cssText = 'width: 50px; height: 50px; object-fit: cover; margin: 2px; border-radius: 4px;';
-                referenceThumbnails.appendChild(img);
+                img.alt = 'Reference Image';
+                img.className = 'reference-image-small';
+                img.style.cssText = 'width: 80px; height: 80px; object-fit: cover; margin: 5px; border-radius: 4px; border: 1px solid #ddd;';
+                modalReferences.appendChild(img);
             });
+        } else {
+            modalReferences.innerHTML = '<p>No reference images used</p>';
         }
-        
-        // Get full prompt from multiple possible sources
-        let fullPromptText = 'Prompt not available';
-        
-        if (painting.promptDetails && painting.promptDetails.fullPrompt) {
-            fullPromptText = painting.promptDetails.fullPrompt;
-        } else if (painting.fullPrompt) {
-            fullPromptText = painting.fullPrompt;
-        } else if (painting.full_prompt) {
-            fullPromptText = painting.full_prompt;
-        }
-        
-        console.log('Final full prompt text:', fullPromptText);
-        
-        if (fullPrompt) {
-            fullPrompt.textContent = fullPromptText;
-        }
-        
-        // Show the modal
-        promptModal.style.display = 'block';
-        
-    } catch (error) {
-        console.error('Error showing prompt details:', error);
-        showError('Error displaying prompt details: ' + error.message);
     }
+    
+    // Display reference analysis if available
+    if (modalReferenceAnalysis) {
+        if (painting.reference_analysis) {
+            modalReferenceAnalysis.innerHTML = `
+                <h4>Reference Style Analysis:</h4>
+                <p>${painting.reference_analysis}</p>
+            `;
+            modalReferenceAnalysis.style.display = 'block';
+        } else {
+            modalReferenceAnalysis.style.display = 'none';
+        }
+    }
+    
+    promptModal.style.display = 'block';
 }
 
 function closePromptModal() {

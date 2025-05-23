@@ -5,7 +5,21 @@ require('dotenv').config();
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
-// Function to generate painting ideas using OpenRouter with function calling
+// Function to get reference images for a title
+async function getReferenceImages(titleId) {
+  try {
+    const [references] = await pool.execute(
+      'SELECT id, image_data FROM references2 WHERE title_id = ? OR is_global = 1',
+      [titleId]
+    );
+    return references;
+  } catch (error) {
+    console.error('Error fetching reference images:', error);
+    return [];
+  }
+}
+
+// Function to generate painting ideas using OpenRouter with reference image awareness
 async function generateIdeas(titleId, titleText, instructions, previousIdeas = []) {
   try {
     if (!titleId) {
@@ -25,6 +39,10 @@ async function generateIdeas(titleId, titleText, instructions, previousIdeas = [
       throw new Error('Invalid OpenRouter API key format. Key should start with "sk-or-v1-"');
     }
     
+    // Get reference images for this title
+    const referenceImages = await getReferenceImages(titleId);
+    console.log(`📸 Found ${referenceImages.length} reference images for idea generation`);
+    
     // Get previous ideas for context
     const previousIdeasSummary = previousIdeas.length > 0 
       ? `Previous painting ideas: ${previousIdeas.map(idea => idea.summary).join('; ')}`
@@ -32,48 +50,101 @@ async function generateIdeas(titleId, titleText, instructions, previousIdeas = [
     
     console.log('Making OpenRouter API request with model: google/gemini-2.5-flash-preview');
     
+    // Build messages array with reference images if available
+    const messages = [
+      { 
+        role: 'system', 
+        content: `You are a creative painting designer who generates painting concepts that match uploaded reference images.
+
+IMPORTANT RULES:
+1. If reference images are provided, the painting concept MUST match the subject type and style of those images
+2. If reference shows a person (man/woman), generate portrait-style concepts featuring similar subjects
+3. If reference shows objects/landscapes, generate concepts featuring similar subjects
+4. Match the visual style, mood, and composition of the reference images
+5. Generate realistic, achievable painting concepts, not abstract or surreal art unless the reference is abstract
+6. Focus on the SUBJECT TYPE first (person, object, landscape, etc.) then apply creative variations`
+      }
+    ];
+
+    // Create user message content
+    let userContent = [];
+    
+    // Add text instruction
+    userContent.push({
+      type: 'text',
+      text: `Create a painting concept for the title: "${titleText}".
+${instructions ? `Custom instructions: ${instructions}` : ''}
+${previousIdeasSummary}
+
+${referenceImages.length > 0 ? 
+  `REFERENCE IMAGES PROVIDED: You have ${referenceImages.length} reference image(s). 
+  CRITICAL: Analyze these images and generate a painting concept that matches the SUBJECT TYPE and STYLE shown in the references.
+  - If the reference shows a person, create a portrait-style concept
+  - If the reference shows an object, create a concept featuring similar objects
+  - Match the visual style, lighting, and mood of the reference images
+  - Generate a realistic painting concept that could actually match the reference style` :
+  'No reference images provided. Generate a creative painting concept based on the title and instructions.'
+}
+
+Please generate a completely new painting idea that ${referenceImages.length > 0 ? 'matches the reference images' : 'hasn\'t been suggested yet'}.`
+    });
+
+    // Add reference images to the message (limit to 2 for API efficiency)
+    if (referenceImages.length > 0) {
+      const imagesToInclude = referenceImages.slice(0, 2);
+      imagesToInclude.forEach((ref, index) => {
+        userContent.push({
+          type: 'image_url',
+          image_url: {
+            url: ref.image_data,
+            detail: 'high'
+          }
+        });
+      });
+    }
+
+    messages.push({
+      role: 'user',
+      content: userContent
+    });
+    
     const requestData = {
       model: 'google/gemini-2.5-flash-preview',
-      messages: [
-        { role: 'system', content: 'You are a creative painting designer. Generate unique painting concepts that haven\'t been suggested before.' },
-        { role: 'user', content: `Create a painting concept for the title: "${titleText}".
-          ${instructions ? `Custom instructions: ${instructions}` : ''}
-          ${previousIdeasSummary}
-          Please generate a completely new and different painting idea that hasn't been suggested yet.`
-        }
-      ],
+      messages: messages,
       tools: [{
         type: 'function',
         function: {
           name: 'savePaintingIdea',
-          description: 'Save a painting idea',
+          description: 'Save a painting idea that matches the reference images',
           parameters: {
             type: 'object',
             properties: {
               summary: {
                 type: 'string',
-                description: 'A short summary of the painting idea (30-50 words)'
+                description: 'A short summary of the painting idea that matches the reference style and subject (30-50 words)'
               },
               fullPrompt: {
                 type: 'string',
-                description: 'The full prompt to generate this painting image (100-200 words with detailed visual instructions)'
+                description: 'The full prompt to generate this painting image, ensuring it matches the reference images\' subject type and style (100-200 words with detailed visual instructions)'
               }
             },
             required: ['summary', 'fullPrompt']
           }
         }
       }],
-      tool_choice: { type: 'function', function: { name: 'savePaintingIdea' } }
+      tool_choice: { type: 'function', function: { name: 'savePaintingIdea' } },
+      max_tokens: 1000,
+      temperature: 0.7
     };
 
     const response = await axios.post(OPENROUTER_URL, requestData, {
       headers: {
         'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
         'Content-Type': 'application/json',
-        'HTTP-Referer': 'http://localhost:3000', // Optional: helps with rate limiting
-        'X-Title': 'AI Painting Generator' // Optional: helps with tracking
+        'HTTP-Referer': 'http://localhost:3000',
+        'X-Title': 'AI Painting Generator'
       },
-      timeout: 30000 // 30 second timeout
+      timeout: 60000 // Increased timeout for image processing
     });
 
     if (!response.data || !response.data.choices || !response.data.choices[0]) {
@@ -113,7 +184,9 @@ async function generateIdeas(titleId, titleText, instructions, previousIdeas = [
       fullPrompt: ideaData.fullPrompt
     };
 
-    console.log('Successfully generated and saved idea:', idea.id);
+    console.log(`✅ Successfully generated ${referenceImages.length > 0 ? 'reference-matched' : 'creative'} idea:`, idea.id);
+    console.log(`📝 Summary: ${ideaData.summary.substring(0, 100)}...`);
+    
     return idea;
 
   } catch (error) {
