@@ -8,7 +8,24 @@ const pool = mysql.createPool({
   database: process.env.DB_NAME,
   waitForConnections: true,
   connectionLimit: 10,
-  queueLimit: 0
+  queueLimit: 0,
+  acquireTimeout: 60000,
+  timeout: 60000,
+  reconnect: true
+});
+
+// Test database connection
+pool.on('connection', function (connection) {
+  console.log('Database connected as id ' + connection.threadId);
+});
+
+pool.on('error', function(err) {
+  console.error('Database error:', err);
+  if(err.code === 'PROTOCOL_CONNECTION_LOST') {
+    console.log('Database connection lost, attempting to reconnect...');
+  } else {
+    throw err;
+  }
 });
 
 async function initializeDatabase() {

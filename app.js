@@ -1,9 +1,8 @@
-// Import API service
 import { 
   login, register, getProfile, 
   createTitle, getTitles, getTitle, updateTitle, deleteTitle,
   uploadReference, getReferences, getGlobalReferences, deleteReference,
-  generateThumbnails as generatePaintings, getThumbnails as getPaintings
+  generatePaintings, getPaintings, regeneratePainting
 } from './frontend/apiService.js';
 
 // Data Storage
@@ -357,34 +356,69 @@ function setupEventListeners() {
             generateBtn.parentNode.replaceChild(newGenerateBtn, generateBtn);
             generateBtn = newGenerateBtn;
             
-            generateBtn.addEventListener('click', async (event) => {
-                event.preventDefault();
-                event.stopPropagation();
+            generateBtn.addEventListener('click', async () => {
+                console.log('Generate button clicked');
+                debugCurrentState();
                 
                 if (isGenerating) {
                     showError('Generation already in progress');
                     return;
                 }
                 
-                if (!currentTitle || !currentTitle.id) {
-                    if (titles.length === 0) {
-                        const titleText = prompt('No titles found. Please enter a title for your first project:');
-                        if (titleText && titleText.trim()) {
-                            await createNewTitle(titleText.trim());
-                            if (currentTitle && currentTitle.id) {
-                                await generatePaintingsWithCurrentTitle();
-                            }
-                            return;
-                        } else {
-                            showError('Please create a title first');
+                // Check if there's a title in the input field first
+                const titleInputValue = titleInput?.value?.trim();
+                
+                if (titleInputValue) {
+                    // User has entered a title in the input field
+                    console.log('Using title from input field:', titleInputValue);
+                    
+                    // Check if this title already exists
+                    const existingTitle = titles.find(t => t.title.toLowerCase() === titleInputValue.toLowerCase());
+                    
+                    if (existingTitle) {
+                        // Use existing title
+                        console.log('Found existing title, loading it:', existingTitle);
+                        await loadTitle(existingTitle);
+                    } else {
+                        // Create new title
+                        console.log('Creating new title:', titleInputValue);
+                        const titleCreated = await createNewTitle(titleInputValue);
+                        if (!titleCreated) {
+                            showError('Failed to create title. Please try again.');
                             return;
                         }
+                    }
+                } else if (!currentTitle || !currentTitle.id) {
+                    // No title in input field and no selected title
+                    console.log('No title in input field and no current title selected');
+                    
+                    if (titles.length === 0) {
+                        // No titles exist at all
+                        const titleText = prompt('No titles found. Please enter a title for your first project:');
+                        if (titleText && titleText.trim()) {
+                            console.log('Attempting to create new title from prompt:', titleText.trim());
+                            const titleCreated = await createNewTitle(titleText.trim());
+                            if (!titleCreated) {
+                                showError('Failed to create title. Please try again.');
+                                return;
+                            }
+                        } else {
+                            return; // User cancelled or entered empty title
+                        }
                     } else {
-                        showError('Please select a title from the sidebar first');
+                        // Titles exist but none selected
+                        showError('Please enter a title in the input field or select an existing title from the sidebar');
                         return;
                     }
                 }
                 
+                // At this point we should have a currentTitle
+                if (!currentTitle || !currentTitle.id) {
+                    showError('Unable to determine title for generation. Please try again.');
+                    return;
+                }
+                
+                console.log('Proceeding with generation for title:', currentTitle);
                 await generatePaintingsWithCurrentTitle();
             });
         }
@@ -499,18 +533,63 @@ async function handleFiles(files, referencesArray, displayElement, isGlobal) {
         
         try {
             const imageData = await readFileAsDataURL(file);
-            const result = await uploadReference(imageData, currentTitle?.id, isGlobal);
+            
+            // Show immediate preview with loading state
+            const tempReference = {
+                id: `temp_${Date.now()}`,
+                image_data: imageData,
+                uploading: true
+            };
             
             if (isGlobal) {
-                globalReferences.push(result);
+                globalReferences.push(tempReference);
                 renderReferenceImages(globalReferences, displayElement);
             } else {
-                referencesArray.push(result);
+                referencesArray.push(tempReference);
                 renderReferenceImages(referencesArray, displayElement);
             }
+            
+            // Upload to server
+            const result = await uploadReference(imageData, currentTitle?.id, isGlobal);
+            
+            // Replace temp reference with real one
+            const completeReference = {
+                ...result,
+                image_data: imageData
+            };
+            
+            if (isGlobal) {
+                const tempIndex = globalReferences.findIndex(ref => ref.id === tempReference.id);
+                if (tempIndex > -1) {
+                    globalReferences[tempIndex] = completeReference;
+                    renderReferenceImages(globalReferences, displayElement);
+                }
+            } else {
+                const tempIndex = referencesArray.findIndex(ref => ref.id === tempReference.id);
+                if (tempIndex > -1) {
+                    referencesArray[tempIndex] = completeReference;
+                    renderReferenceImages(referencesArray, displayElement);
+                }
+            }
+            
         } catch (error) {
             console.error('Error uploading file:', error);
             showError('Error uploading file: ' + error.message);
+            
+            // Remove failed upload from display
+            if (isGlobal) {
+                const failedIndex = globalReferences.findIndex(ref => ref.uploading);
+                if (failedIndex > -1) {
+                    globalReferences.splice(failedIndex, 1);
+                    renderReferenceImages(globalReferences, displayElement);
+                }
+            } else {
+                const failedIndex = referencesArray.findIndex(ref => ref.uploading);
+                if (failedIndex > -1) {
+                    referencesArray.splice(failedIndex, 1);
+                    renderReferenceImages(referencesArray, displayElement);
+                }
+            }
         }
     }
 }
@@ -532,13 +611,27 @@ function renderReferenceImages(references, container) {
     references.forEach(ref => {
         const imgDiv = document.createElement('div');
         imgDiv.className = 'reference-image-item';
-        imgDiv.innerHTML = `
-            <img src="${ref.image_data}" alt="Reference" class="reference-image">
-            <button class="remove-reference-btn" data-id="${ref.id}">×</button>
-        `;
         
-        const removeBtn = imgDiv.querySelector('.remove-reference-btn');
-        removeBtn.addEventListener('click', () => removeReferenceImage(ref.id, references, container));
+        if (ref.uploading) {
+            imgDiv.innerHTML = `
+                <div class="reference-image-container uploading">
+                    <img src="${ref.image_data}" alt="Reference" class="reference-image">
+                    <div class="upload-overlay">
+                        <div class="upload-spinner"></div>
+                    </div>
+                </div>
+            `;
+        } else {
+            imgDiv.innerHTML = `
+                <img src="${ref.image_data || ref}" alt="Reference" class="reference-image">
+                <button class="remove-reference-btn" data-id="${ref.id}">×</button>
+            `;
+            
+            const removeBtn = imgDiv.querySelector('.remove-reference-btn');
+            if (removeBtn) {
+                removeBtn.addEventListener('click', () => removeReferenceImage(ref.id, references, container));
+            }
+        }
         
         container.appendChild(imgDiv);
     });
@@ -656,24 +749,46 @@ function getProgressPercentage(status) {
 }
 
 function startPolling(titleId) {
-    stopPolling();
+    if (pollingInterval) {
+        clearInterval(pollingInterval);
+    }
     
     console.log(`Starting polling for title ${titleId}`);
     
     pollingInterval = setInterval(async () => {
         try {
+            if (!titleId || !isGenerating) {
+                console.log('Stopping polling - no titleId or not generating');
+                stopPolling();
+                return;
+            }
+            
             await loadThumbnails(titleId);
+            
+            // Check if all paintings are completed or failed
+            const activePaintings = Array.from(document.querySelectorAll('.thumbnail-placeholder')).length;
+            if (activePaintings === 0) {
+                console.log('All paintings completed, stopping polling');
+                stopPolling();
+                resetGeneratingState();
+            }
         } catch (error) {
             console.error('Error during polling:', error);
+            // Don't stop polling on single error, but limit retries
+            if (error.message.includes('401') || error.message.includes('403')) {
+                console.log('Authentication error during polling, stopping');
+                stopPolling();
+                resetGeneratingState();
+            }
         }
-    }, 3000);
+    }, 3000); // Poll every 3 seconds
 }
 
 function stopPolling() {
     if (pollingInterval) {
-        console.log('Stopping polling');
         clearInterval(pollingInterval);
         pollingInterval = null;
+        console.log('Polling stopped');
     }
 }
 
@@ -805,11 +920,14 @@ function showPromptDetails(painting) {
         
         // Try to get reference data from different sources
         if (painting.promptDetails && painting.promptDetails.referenceImages) {
-            referenceImages = painting.promptDetails.referenceImages;
-            refCount = painting.promptDetails.referenceCount || referenceImages.length;
-        } else if (currentReferenceDataMap[painting.id]) {
-            referenceImages = currentReferenceDataMap[painting.id];
-            refCount = referenceImages.length;
+            const referenceIds = painting.promptDetails.referenceImages;
+            refCount = painting.promptDetails.referenceCount || referenceIds.length;
+            
+            // Convert reference IDs to actual image data using currentReferenceDataMap
+            referenceImages = referenceIds.map(refId => {
+                const imageData = currentReferenceDataMap[refId];
+                return imageData ? { image_data: imageData } : null;
+            }).filter(ref => ref !== null);
         }
         
         if (referenceCount) {
@@ -820,7 +938,7 @@ function showPromptDetails(painting) {
             referenceThumbnails.innerHTML = '';
             referenceImages.forEach(ref => {
                 const img = document.createElement('img');
-                img.src = ref.image_data || ref;
+                img.src = ref.image_data;
                 img.className = 'reference-thumbnail';
                 img.style.cssText = 'width: 50px; height: 50px; object-fit: cover; margin: 2px; border-radius: 4px;';
                 referenceThumbnails.appendChild(img);
@@ -901,13 +1019,18 @@ function renderTitlesList() {
 
 async function loadTitle(title) {
     try {
+        console.log('=== LOADING TITLE ===');
+        console.log('Input title:', title);
+        
         if (!title || !title.id) {
             console.error('Invalid title object:', title);
             showError('Invalid title data');
             return;
         }
         
+        console.log('Setting currentTitle to:', title);
         currentTitle = title;
+        console.log('currentTitle after setting:', currentTitle);
         
         if (titleInput) titleInput.value = title.title || '';
         if (customInstructions) customInstructions.value = title.instructions || '';
@@ -924,6 +1047,18 @@ async function loadTitle(title) {
                 item.classList.add('active');
             }
         });
+
+        // Load title-specific references
+        try {
+            const titleReferences = await getReferences(title.id);
+            const titleReferenceImages = document.getElementById('title-reference-images');
+            if (titleReferenceImages) {
+                renderReferenceImages(titleReferences, titleReferenceImages);
+            }
+        } catch (error) {
+            console.error('Error loading title references:', error);
+            // Don't show error to user as this is not critical
+        }
         
         await loadThumbnails(title.id);
         
@@ -974,6 +1109,9 @@ async function loadTitle(title) {
                 }
             }
         }
+        
+        console.log('=== TITLE LOADED SUCCESSFULLY ===');
+        console.log('Final currentTitle:', currentTitle);
         
     } catch (error) {
         console.error('Error loading title:', error);
@@ -1035,9 +1173,11 @@ async function createNewTitle(titleText) {
         titles.unshift(newTitle);
         renderTitlesList();
         await loadTitle(newTitle);
+        return newTitle;
     } catch (error) {
         console.error('Error creating title:', error);
         showError('Error creating title: ' + error.message);
+        return null;
     }
 }
 
@@ -1122,6 +1262,20 @@ async function generatePaintingsWithCurrentTitle() {
     }
 }
 
+// Add this debugging function
+function debugCurrentState() {
+    console.log('=== DEBUG CURRENT STATE ===');
+    console.log('currentTitle:', currentTitle);
+    console.log('currentTitle.id:', currentTitle?.id);
+    console.log('titles array:', titles);
+    console.log('titles.length:', titles.length);
+    console.log('titleInput.value:', titleInput?.value);
+    console.log('customInstructions.value:', customInstructions?.value);
+    console.log('isGenerating:', isGenerating);
+    console.log('generateBtn.disabled:', generateBtn?.disabled);
+    console.log('===========================');
+}
+
 // Initialize when DOM is loaded
 document.addEventListener('DOMContentLoaded', init);
 
@@ -1136,4 +1290,4 @@ document.addEventListener('visibilitychange', () => {
         console.log('Page visible, resuming polling');
         startPolling(currentTitle.id);
     }
-}); 
+});

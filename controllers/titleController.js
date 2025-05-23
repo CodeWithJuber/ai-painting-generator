@@ -19,25 +19,25 @@ async function createTitle(req, res) {
   
   if (!title || title.trim() === '') {
     console.error('Title is missing or empty');
-    return res.status(400).json({ error: 'Title is required' });
+    return res.status(400).json({ error: 'Title is required and cannot be empty' });
+  }
+  
+  // Validate title length
+  if (title.trim().length > 255) {
+    return res.status(400).json({ error: 'Title is too long (maximum 255 characters)' });
   }
   
   try {
-    const params = [userId, title.trim(), instructions || null];
-    console.log('SQL parameters:', params);
-    
-    // Validate parameters
-    if (params.some(p => p === undefined)) {
-      console.error('Attempted to execute query with undefined parameter:', { params });
-      return res.status(500).json({ error: 'Internal server error: Invalid query parameter detected' });
-    }
-
     const [result] = await pool.execute(
       'INSERT INTO titles (user_id, title, instructions) VALUES (?, ?, ?)',
-      params
+      [userId, title.trim(), instructions || null]
     );
     
     console.log('Insert result:', result);
+    
+    if (!result.insertId) {
+      throw new Error('Failed to get insert ID from database');
+    }
     
     const newTitle = {
       id: result.insertId,
@@ -50,24 +50,23 @@ async function createTitle(req, res) {
     res.status(201).json(newTitle);
   } catch (error) {
     console.error('Error creating title:', error);
-    console.error('Error details:', {
-      message: error.message,
-      code: error.code,
-      errno: error.errno,
-      sql: error.sql
-    });
     res.status(500).json({ error: 'Failed to create title: ' + error.message });
   }
 }
 
 // Get all titles for the current user
 async function getTitles(req, res) {
+  console.log('=== GET TITLES DEBUG ===');
+  console.log('req.user:', req.user);
+  console.log('req.user.id:', req.user?.id);
+  
   if (!req.user || !req.user.id) {
     console.error('User not authenticated properly');
     return res.status(401).json({ error: 'Authentication required' });
   }
 
   const userId = req.user.id;
+  console.log('Querying titles for userId:', userId);
   
   try {
     const params = [userId];
@@ -81,6 +80,9 @@ async function getTitles(req, res) {
       'SELECT id, title, instructions, created_at FROM titles WHERE user_id = ? ORDER BY created_at DESC',
       params
     );
+    
+    console.log('Query result - rows found:', rows.length);
+    console.log('Titles found:', rows);
     
     res.status(200).json({ titles: rows });
   } catch (error) {

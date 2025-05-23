@@ -1,7 +1,7 @@
 // Simple API service for same-origin requests
 const API_BASE_URL = '/api';
 
-// Helper function to make API requests
+// Helper function to make API requests with better error handling
 const apiRequest = async (endpoint, options = {}) => {
   const token = localStorage.getItem('authToken');
   
@@ -34,9 +34,16 @@ const apiRequest = async (endpoint, options = {}) => {
       data = await response.text();
     }
     
-    console.log(`API response for ${endpoint}:`, { status: response.status, data });
+    console.log(`API response for ${endpoint}:`, data);
     
     if (!response.ok) {
+      // Handle specific error cases
+      if (response.status === 401) {
+        localStorage.removeItem('authToken');
+        window.location.reload();
+        return;
+      }
+      
       // Extract error message from response
       const errorMessage = data.error || data.message || `HTTP ${response.status}: ${response.statusText}`;
       throw new Error(errorMessage);
@@ -45,6 +52,12 @@ const apiRequest = async (endpoint, options = {}) => {
     return data;
   } catch (error) {
     console.error(`API request failed for ${endpoint}:`, error);
+    
+    // Handle network errors
+    if (error.name === 'TypeError' && error.message.includes('fetch')) {
+      throw new Error('Network error: Please check your internet connection');
+    }
+    
     throw error;
   }
 };
@@ -79,14 +92,12 @@ export const createTitle = async (title, instructions) => {
   });
   
   console.log('API createTitle response:', result);
-  
-  // The backend returns the title object directly, not wrapped
   return result;
 };
 
 export const getTitles = async () => {
   const result = await apiRequest('/titles');
-  return result.titles || result || [];
+  return result.titles || [];
 };
 
 export const getTitle = async (id) => {
@@ -99,7 +110,7 @@ export const updateTitle = async (id, title, instructions) => {
     method: 'PUT',
     body: JSON.stringify({ title, instructions })
   });
-  return result.title || result;
+  return result;
 };
 
 export const deleteTitle = async (id) => {
@@ -113,22 +124,22 @@ export const uploadReference = async (imageData, titleId = null, isGlobal = fals
   const result = await apiRequest('/references', {
     method: 'POST',
     body: JSON.stringify({ 
-      image_data: imageData, 
-      title_id: titleId, 
-      is_global: isGlobal 
+      imageData: imageData,
+      titleId: titleId,
+      isGlobal: isGlobal
     })
   });
-  return result.reference || result;
+  return result;
 };
 
 export const getReferences = async (titleId) => {
   const result = await apiRequest(`/references/${titleId}`);
-  return result.references || result || [];
+  return result.references || [];
 };
 
 export const getGlobalReferences = async () => {
   const result = await apiRequest('/references/global');
-  return result.references || result || [];
+  return result.references || [];
 };
 
 export const deleteReference = async (id) => {
@@ -138,14 +149,14 @@ export const deleteReference = async (id) => {
 };
 
 // Painting endpoints
-export const generateThumbnails = async (titleId, quantity = 5) => {
+export const generatePaintings = async (titleId, quantity = 5) => {
   return await apiRequest('/paintings/generate', {
     method: 'POST',
     body: JSON.stringify({ titleId, quantity })
   });
 };
 
-export const getThumbnails = async (titleId) => {
+export const getPaintings = async (titleId) => {
   return await apiRequest(`/paintings/${titleId}`);
 };
 

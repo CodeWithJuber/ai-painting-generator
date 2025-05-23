@@ -20,22 +20,18 @@ async function uploadReference(req, res) {
   }
   
   try {
-    const params = [isGlobal ? null : titleId, userId, imageData, isGlobal ? 1 : 0];
-    // Validate parameters
-    if (params.some(p => p === undefined)) {
-      console.error('Attempted to execute query with undefined parameter:', { params });
-      return res.status(500).json({ error: 'Internal server error: Invalid query parameter detected' });
-    }
-
     const [result] = await pool.execute(
       'INSERT INTO references2 (title_id, user_id, image_data, is_global) VALUES (?, ?, ?, ?)',
-      params
+      [isGlobal ? null : titleId, userId, imageData, isGlobal ? 1 : 0]
     );
     
+    // Return complete reference data including image_data
     res.status(201).json({
       id: result.insertId,
-      titleId: isGlobal ? null : titleId,
-      isGlobal,
+      title_id: isGlobal ? null : titleId,
+      user_id: userId,
+      image_data: imageData, // Include the image data in response
+      is_global: isGlobal,
       created_at: new Date()
     });
   } catch (error) {
