@@ -777,29 +777,79 @@ function showPromptDetails(painting) {
     if (!promptModal) return;
     
     try {
-        if (modalImage) modalImage.src = painting.image_data || painting.image_url || '';
-        if (promptSummary) promptSummary.textContent = painting.summary || '';
-        if (promptTitle) promptTitle.textContent = currentTitle?.title || '';
-        if (promptInstructions) promptInstructions.textContent = currentTitle?.instructions || 'No custom instructions';
+        // Debug logging
+        console.log('Showing prompt details for painting:', painting);
         
-        const refImages = currentReferenceDataMap[painting.id] || [];
-        if (referenceCount) referenceCount.textContent = refImages.length;
+        // Set image
+        if (modalImage) {
+            modalImage.src = painting.image_data || painting.image_url || '';
+        }
+        
+        // Set summary
+        if (promptSummary) {
+            promptSummary.textContent = painting.summary || 'No summary available';
+        }
+        
+        // Set title and instructions from current title
+        if (promptTitle) {
+            promptTitle.textContent = currentTitle?.title || 'Unknown Title';
+        }
+        
+        if (promptInstructions) {
+            promptInstructions.textContent = currentTitle?.instructions || 'No custom instructions';
+        }
+        
+        // Handle reference images
+        let referenceImages = [];
+        let refCount = 0;
+        
+        // Try to get reference data from different sources
+        if (painting.promptDetails && painting.promptDetails.referenceImages) {
+            referenceImages = painting.promptDetails.referenceImages;
+            refCount = painting.promptDetails.referenceCount || referenceImages.length;
+        } else if (currentReferenceDataMap[painting.id]) {
+            referenceImages = currentReferenceDataMap[painting.id];
+            refCount = referenceImages.length;
+        }
+        
+        if (referenceCount) {
+            referenceCount.textContent = refCount;
+        }
         
         if (referenceThumbnails) {
             referenceThumbnails.innerHTML = '';
-            refImages.forEach(ref => {
+            referenceImages.forEach(ref => {
                 const img = document.createElement('img');
-                img.src = ref.image_data;
+                img.src = ref.image_data || ref;
                 img.className = 'reference-thumbnail';
+                img.style.cssText = 'width: 50px; height: 50px; object-fit: cover; margin: 2px; border-radius: 4px;';
                 referenceThumbnails.appendChild(img);
             });
         }
         
-        if (fullPrompt) fullPrompt.textContent = painting.full_prompt || 'Prompt not available';
+        // Get full prompt from multiple possible sources
+        let fullPromptText = 'Prompt not available';
         
+        if (painting.promptDetails && painting.promptDetails.fullPrompt) {
+            fullPromptText = painting.promptDetails.fullPrompt;
+        } else if (painting.fullPrompt) {
+            fullPromptText = painting.fullPrompt;
+        } else if (painting.full_prompt) {
+            fullPromptText = painting.full_prompt;
+        }
+        
+        console.log('Final full prompt text:', fullPromptText);
+        
+        if (fullPrompt) {
+            fullPrompt.textContent = fullPromptText;
+        }
+        
+        // Show the modal
         promptModal.style.display = 'block';
+        
     } catch (error) {
         console.error('Error showing prompt details:', error);
+        showError('Error displaying prompt details: ' + error.message);
     }
 }
 

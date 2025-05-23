@@ -321,6 +321,8 @@ async function getPaintings(req, res) {
         created_at: row.created_at || new Date(),
         error_message: row.error_message || '',
         summary: row.summary || 'Generating concept...',
+        fullPrompt: row.fullPrompt || '',
+        full_prompt: row.fullPrompt || '',
         promptDetails: promptDetails
       };
     });
